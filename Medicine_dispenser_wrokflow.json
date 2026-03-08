@@ -1,0 +1,2424 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/identify",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyName": "image",
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1520,
+        -48
+      ],
+      "id": "23d85174-3595-43c9-b1b4-7dba2f1db66a",
+      "name": "Webhook7",
+      "webhookId": "800d6e7d-2a23-461c-8416-a7a2fac21bbc",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a pharmaceutical identification assistant.\n\nFrom the given image of a medicine strip, bottle, or box:\n- Read ONLY visible printed text\n- Identify the main medicine or brand name\n- Ignore company names, prices, batch numbers, and dosage\n- If the name is not clearly readable, return \"unknown\"\n\nReturn ONLY valid JSON in this format:\n\n{\n  \"medicine\": \"<name or unknown>\"\n}\n",
+        "options": {
+          "passthroughBinaryImages": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3760,
+        -272
+      ],
+      "id": "1b54f793-c5e5-46d9-ba26-3dc3ba7388a1",
+      "name": "AI Agent2",
+      "alwaysOutputData": true,
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"request_id\": \"{{ $json.request_id }}\",\n  \"medicine\": \"{{ $json.medicine }}\",\n  \"free_boxes\": {{ JSON.stringify($('request_id').item.json.free_boxes) }},\n\"time_required\": true,\n  \"message\": \"I detected this as {{ $json.medicine }}. Choose a box and a slot. If not correct, select NO.\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        5680,
+        -144
+      ],
+      "id": "8a46690b-9d74-4913-b13a-c7f1e03d26c2",
+      "name": "Respond to Webhook7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output || \"\";\n\n// remove ```json or json\\n wrappers\nconst clean = raw\n  .replace(/```json|```/g, \"\")\n  .replace(/^json\\s*/i, \"\")\n  .trim();\n\nlet data;\ntry {\n  data = JSON.parse(clean);\n} catch (e) {\n  data = { medicine: \"unknown\" };\n}\n\nreturn [{ json: data }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4112,
+        -272
+      ],
+      "id": "4a773441-15c0-44fc-aa89-be953a7e1204",
+      "name": "clean name2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ad11ae4b-9763-42f2-8157-ba9d46d7ecb1",
+              "leftValue": "={{ $json.quota }}",
+              "rightValue": "=0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2640,
+        96
+      ],
+      "id": "19be3fa2-ca23-47c7-a96e-646bec6f943f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"quota_full\",\n  \"message\": \"Boxes filled. Please empty a box before uploading a new medicine.\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2864,
+        144
+      ],
+      "id": "aa5400f5-9ee8-49d5-9f1d-2f795f93ed47",
+      "name": "quota full1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3536,
+        -272
+      ],
+      "id": "f312e287-c100-4f23-a3d1-1428dc3525e8",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const MAX = 5;\nconst used = new Set();\n\n// Directly pull data from 'Get row(s)1' regardless of the path taken\nconst inventoryRows = $(\"get rows\").all();\n\nfor (const item of inventoryRows) {\n  const raw = item.json.box;\n  if (!raw) continue;\n\n  const b = Number(raw);\n  if (Number.isInteger(b) && b >= 1 && b <= MAX) {\n    used.add(b);\n  }\n}\n\n// Compute free boxes\nconst free = [];\nfor (let i = 1; i <= MAX; i++) {\n  if (!used.has(i)) free.push(i);\n}\n\nreturn {\n  used_boxes: Array.from(used),\n  free_boxes: free,\n  selected_box: free.length > 0 ? free[0] : null\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3312,
+        -64
+      ],
+      "id": "7a41e725-c25b-44b9-9473-430c77bc78c7",
+      "name": "compute free box"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet medicine = null;\nlet freeBoxes = [];\n\nfor (const item of items) {\n  if (item.json && item.json.medicine) {\n    medicine = item.json.medicine;\n  }\n  if (item.json && Array.isArray(item.json.free_boxes)) {\n    freeBoxes = item.json.free_boxes;\n  }\n}\n\nif (!Array.isArray(freeBoxes)) {\n  freeBoxes = [];\n}\n\nreturn [{\n  json: {\n    medicine: medicine || \"Unknown\",\n    free_boxes: freeBoxes,\n    message: freeBoxes.length\n      ? `I detected this as ${medicine}. Available boxes: ${freeBoxes.join(\", \")}`\n      : `I detected this as ${medicine}. No boxes available.`\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5008,
+        -144
+      ],
+      "id": "dcb05804-7535-453c-a748-18bf216bbf56",
+      "name": "confirmation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ad11ae4b-9763-42f2-8157-ba9d46d7ecb1",
+              "leftValue": "={{ $json.quota }}",
+              "rightValue": "=0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2848,
+        816
+      ],
+      "id": "af5ca403-12de-4d2c-9639-bd77d536cbc7",
+      "name": "If6"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/confirm",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1264,
+        992
+      ],
+      "id": "c50acbc2-bd12-4a30-a12e-763e9cf9ca92",
+      "name": "Webhook8",
+      "webhookId": "f097113b-d84b-43fb-ae00-b9c9df7bf85d"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"request_id\": \"{{ $json.request_id.trim() }}\",\n  \"status\": \"Assigned\",\n  \"medicine\": \"{{ $json.medicine }}\",\n  \"box\": \"{{ $json.box }}\",\n  \"message\": \"Medicine stored in box {{ $json.box }}.trim()\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4624,
+        816
+      ],
+      "id": "1e6d14a2-31bf-453d-8366-52f5a80ba978",
+      "name": "Respond to Webhook10",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet medicine = null;\nlet freeBoxes = [];\n\nfor (const item of items) {\n  if (item.json.medicine) {\n    medicine = item.json.medicine;\n  }\n  if (Array.isArray(item.json.free_boxes)) {\n    freeBoxes = item.json.free_boxes;\n  }\n}\n\nreturn [{\n  json: {\n    medicine,\n    free_boxes: freeBoxes,\n    message: `I detected this as ${medicine}. Available boxes: ${freeBoxes.join(\", \")}`\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4784,
+        -144
+      ],
+      "id": "d045778d-2396-4015-a235-8b1c8d40fbfc",
+      "name": "clean merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Generate unique request id\nconst request_id = \"REQ-\" + Date.now() + \"-\" + Math.floor(Math.random() * 10000);\n\nreturn [{\n  json: {\n    request_id,\n    user: data.user || \"demo_user\",\n    medicine: data.medicine,\n    free_boxes: data.free_boxes\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5232,
+        -144
+      ],
+      "id": "5b18d7ce-ded8-4d96-9119-1bbea571fc4c",
+      "name": "request_id"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4336,
+        -144
+      ],
+      "id": "90e6e72e-35bb-41bb-9a01-50423274f119",
+      "name": "Merge4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet medicine = null;\nlet freeBoxes = [];\n\nfor (const item of items) {\n  if (typeof item.json.medicine === \"string\") {\n    medicine = item.json.medicine;\n  }\n  if (Array.isArray(item.json.free_boxes)) {\n    freeBoxes = item.json.free_boxes;\n  }\n}\n\nreturn [{\n  json: {\n    medicine,\n    free_boxes: freeBoxes\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4560,
+        -144
+      ],
+      "id": "f22197f2-e031-4469-b921-3ae34381f288",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5a114eb3-d4e7-40c8-b5b7-ad88576676f5",
+              "name": "request_id",
+              "value": "={{ $('request id row1').first().json.request_id }}\n",
+              "type": "string"
+            },
+            {
+              "id": "e96b6d03-9dac-462e-9b85-caa0ce2780be",
+              "name": "medicine",
+              "value": "={{ $('Get row from medicine1').item.json.medicine }}",
+              "type": "string"
+            },
+            {
+              "id": "a1e9cd77-ef7b-4fcb-9013-1ef4da072dbc",
+              "name": "box",
+              "value": "={{ $json.last_box_used }}",
+              "type": "string"
+            },
+            {
+              "id": "056145b4-6967-4f4c-b453-a731e1e27529",
+              "name": "status",
+              "value": "Assigned",
+              "type": "string"
+            },
+            {
+              "id": "7a0c34c5-b61d-4317-8bde-77b80fcc0929",
+              "name": "message",
+              "value": "=Medicine stored at {{ $json.last_box_used }}\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4352,
+        816
+      ],
+      "id": "ba44d12b-87d6-4abe-a071-1a1f755cb4c7",
+      "name": "prepare response"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.body.request_id }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2176,
+        912
+      ],
+      "id": "7ba83c24-3631-4d4f-874a-b1b242bfe77d",
+      "name": "request id row1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "hqDSSU41ceRz2PwM",
+          "mode": "list",
+          "cachedResultName": "quota",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/hqDSSU41ceRz2PwM"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "=1"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user": "={{ $json.user }}",
+            "quota": "={{ $('get quota').item.json.quota -1}}",
+            "last_box_used": "={{ $json.box }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "quota",
+              "displayName": "quota",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_box_used",
+              "displayName": "last_box_used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4016,
+        800
+      ],
+      "id": "76876dbd-9299-4b1d-87cd-f445dec58081",
+      "name": "update quota"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "hqDSSU41ceRz2PwM",
+          "mode": "list",
+          "cachedResultName": "quota",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/hqDSSU41ceRz2PwM"
+        },
+        "matchType": "allConditions",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2624,
+        816
+      ],
+      "id": "327ad49b-668b-4c8e-9885-91af094ffd94",
+      "name": "get quota",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3c522bee-8969-4509-a462-3befec287fd6",
+              "leftValue": "={{ $json.body }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1488,
+        992
+      ],
+      "id": "49b00524-5b60-40e9-9e09-6ccee5133a73",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"request_id\": \"{{ $json.request_id.trim() }}\",\n  \"status\": \"Cancelled\",\n  \"action\": \"reset_ui\",\n  \"message\": \"Please upload a new medicine image.\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2176,
+        1104
+      ],
+      "id": "a312c299-17bf-4f31-883f-a394619cc596",
+      "name": "Respond to Webhook11"
+    },
+    {
+      "parameters": {
+        "path": "/inventory",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        1648
+      ],
+      "id": "0a703966-8ae6-466e-b626-0c7db431a25a",
+      "name": "Webhook9",
+      "webhookId": "86f5a24b-4a39-402d-a3a2-c5b47113c197"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2432,
+        1648
+      ],
+      "id": "215cd31e-5659-4e17-8920-2208239cf45b",
+      "name": "Respond to Webhook12"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $items(\"Read Medicine Table1\").map(i => i.json);\n\nconst boxes = [1,2,3,4,5];\n\nconst inventory = boxes.map(box => {\n  const found = rows.find(r => Number(r.box) === box);\n  return {\n    box: box,\n    medicine: found ? found.medicine : null,\n    times: found ? found.time : null,\n    rfid_id: found ? found.rfid_id : null,\n    user: found ? found.user : null\n  };\n});\n\nreturn inventory.map(i => ({ json: i }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        1648
+      ],
+      "id": "2f416632-7924-4185-a70b-de97dd902eca",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "hqDSSU41ceRz2PwM",
+          "mode": "list",
+          "cachedResultName": "quota",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/hqDSSU41ceRz2PwM"
+        },
+        "limit": "={{ 1 }}"
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2416,
+        96
+      ],
+      "id": "f3b144ce-28f0-4cc7-ac7e-e65ce006832c",
+      "name": "get rows from quota1"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now }}",
+            "user": "demo_user"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "box",
+              "displayName": "box",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "medicine",
+              "displayName": "medicine",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2912,
+        -64
+      ],
+      "id": "380e8c88-2ba6-467f-9d07-96b4ab3caa12",
+      "name": "insert row in medicine1"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "request_id": "={{ $json.request_id }}",
+            "medicine": "={{ $json.medicine }}",
+            "user": "={{ $json.user }}",
+            "expires_at": "={{ new Date(Date.now() + 10 * 60 * 1000).toISOString() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "request_id",
+              "displayName": "request_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "medicine",
+              "displayName": "medicine",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "expires_at",
+              "displayName": "expires_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5456,
+        -144
+      ],
+      "id": "4382dfd7-9cad-4bb9-8fef-0eacecf8548e",
+      "name": "insert row in request_id1"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3072,
+        800
+      ],
+      "id": "948334a3-b17d-42fa-9e40-c379922d4ebd",
+      "name": "Get row from medicine1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "box": "={{ $('Webhook8').item.json.body.selected_box }}",
+            "user": "={{ $('Webhook8').item.json.body.rfid_id }}",
+            "time": "={{ JSON.stringify($('Webhook8').item.json.body.selected_times) }}",
+            "medicine": "={{ $('Webhook8').item.json.body.medicine }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "box",
+              "displayName": "box",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "medicine",
+              "displayName": "medicine",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3696,
+        800
+      ],
+      "id": "89935d4a-fb12-402d-850c-09e7410ba628",
+      "name": "Update row of medicine2"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1984,
+        1648
+      ],
+      "id": "516cf7b6-0ade-4a8e-b5ca-58650f09d880",
+      "name": "Read Medicine Table1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "replace-box",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1712,
+        2304
+      ],
+      "id": "5d600d2b-f894-4a35-bc4c-22b137e8391e",
+      "name": "Webhook10",
+      "webhookId": "e0c4dc14-12a7-432d-ab12-853d41550a62"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c2b6e726-355d-416f-8d2c-4dba7fc5be15",
+              "name": "box ",
+              "value": "={{$json.body.box}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1936,
+        2304
+      ],
+      "id": "c69ec9e0-74f4-4302-b395-2ae00102f026",
+      "name": "Edit Fields3"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "box",
+              "keyValue": "={{ $('Edit Fields3').item.json.body.box }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "medicine": "={{$json.medicine}}",
+            "user": "demo_user",
+            "time": "={{ $('Webhook10').item.json.body.time }}",
+            "timestamp": "={{ $now }}",
+            "box": "={{ $('Webhook10').item.json.body.box }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "box",
+              "displayName": "box",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "medicine",
+              "displayName": "medicine",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2736,
+        2304
+      ],
+      "id": "21d506f5-e477-43e6-84c9-e1cb9b488743",
+      "name": "Update row(s)2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"box\": \"{{ $json.box }}\",\n  \"medicine\": \"{{ $json.medicine }}\",\n  \"slot_options\": [\"morning\", \"afternoon\", \"evening\"],\n  \"message\": \"Medicine updated. Please select the slot for this box.\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2960,
+        2304
+      ],
+      "id": "84e5fa58-ba06-48a5-8990-a4afc31feec9",
+      "name": "Respond to Webhook13"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a pharmaceutical identification assistant.\n\nFrom the given image of a medicine strip, bottle, or box:\n- Read ONLY visible printed text\n- Identify the main medicine or brand name\n- Ignore company names, prices, batch numbers, and dosage\n- If the name is not clearly readable, return \"unknown\"\n\nReturn ONLY valid JSON in this format:\n\n{\n  \"medicine\": \"<name or unknown>\"\n}\n",
+        "options": {
+          "passthroughBinaryImages": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2160,
+        2208
+      ],
+      "id": "c753386b-fb59-4780-ad6d-93c5f0070baa",
+      "name": "AI Agent3",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output || $json.text || \"\";\n\nconst cleaned = raw\n  .replace(/```json/gi, \"\")\n  .replace(/```/g, \"\")\n  .trim();\n\nlet medicine = \"unknown\";\n\ntry {\n  const parsed = JSON.parse(cleaned);\n  medicine = parsed.medicine || \"unknown\";\n} catch (e) {\n  if (cleaned.length > 0) medicine = cleaned;\n}\n\n// Convert box to number\nconst box = Number($('Edit Fields3').first().json.body.box);\n\nreturn [{\n  json: {\n    box,\n    medicine\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2512,
+        2304
+      ],
+      "id": "3e807a35-a406-4fbe-b100-1d0e4b8e09a5",
+      "name": "clean name3"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        2432
+      ],
+      "id": "ff60cd63-871e-483d-8881-738a1d8737ff",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "ifGXJyXCIuejRpeh",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "id",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        3264,
+        800
+      ],
+      "id": "0dbe2888-b6f6-4620-8dfb-31659bdb0c53",
+      "name": "Sort1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        3472,
+        800
+      ],
+      "id": "fdad8c9a-a594-469d-87de-22c57f31bfe6",
+      "name": "Limit2"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reset",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1776,
+        2816
+      ],
+      "id": "b2b7e050-a002-4f3a-8953-38304fe3be4e",
+      "name": "Webhook11",
+      "webhookId": "9e9df1ab-e152-484a-9b72-b3aaa52136f7"
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user",
+              "condition": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2000,
+        2816
+      ],
+      "id": "142c4a37-7707-4aa6-99d6-3c5547fb1563",
+      "name": "Delete row(s)2",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "hqDSSU41ceRz2PwM",
+          "mode": "list",
+          "cachedResultName": "quota",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/hqDSSU41ceRz2PwM"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user",
+              "condition": "isNotEmpty"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user": "demo_user",
+            "quota": "5",
+            "last_box_used": "0"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "quota",
+              "displayName": "quota",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_box_used",
+              "displayName": "last_box_used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2224,
+        2816
+      ],
+      "id": "cc5396e5-ee2d-40ad-b812-559f68d2ae90",
+      "name": "Update row(s)3"
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user",
+              "condition": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2448,
+        2816
+      ],
+      "id": "3e9c3dfb-d72f-41e1-b63c-840661972d09",
+      "name": "Delete row(s)3"
+    },
+    {
+      "parameters": {
+        "path": "esp32",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1728,
+        3360
+      ],
+      "id": "0f828da9-5a33-495a-86c7-293a30d8c623",
+      "name": "Webhook12",
+      "webhookId": "46bc9ac0-bc25-4649-a35f-e81032869c24"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3f82c125-8f31-4458-886a-3f934f0c18bd",
+              "name": "box",
+              "value": "={{ $json.box }}",
+              "type": "number"
+            },
+            {
+              "id": "44cf1611-57ed-43ca-b13b-018d30dc175b",
+              "name": "time",
+              "value": "=={{ JSON.stringify($json.time || []) }}",
+              "type": "string"
+            },
+            {
+              "id": "d1e42d54-fda7-4dc6-b5b2-e2e1543e9c1c",
+              "name": "rfid_id",
+              "value": "={{ $json.user }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2176,
+        3360
+      ],
+      "id": "6f98393b-9d37-4a0f-885e-67c8646d7b46",
+      "name": "Edit Fields4",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2624,
+        3360
+      ],
+      "id": "8bb4be9f-f5b4-47cf-9a99-8ba3287d3231",
+      "name": "Respond to Webhook14"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1952,
+        3360
+      ],
+      "id": "487919fc-be44-44ae-8129-b87334195cf8",
+      "name": "Get row(s)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\n\nreturn rows.map(r => {\n\n  let raw = r.json.time;\n  let times = [];\n\n  if (raw) {\n\n    raw = String(raw);\n\n    // remove leading =\n    raw = raw.replace(/^=/, \"\");\n\n    // remove surrounding quotes\n    raw = raw.replace(/^\"+|\"+$/g, \"\");\n\n    // remove escaped quotes\n    raw = raw.replace(/\\\\\"/g, '\"');\n\n    // if array exists inside text\n    const match = raw.match(/\\[.*\\]/);\n\n    if (match) {\n      try {\n        times = JSON.parse(match[0]);\n      } catch {\n        times = [];\n      }\n    }\n\n    // single time\n    else if (/^\\d{2}:\\d{2}$/.test(raw)) {\n      times = [raw];\n    }\n  }\n\n  let uid = r.json.rfid_id || \"\";\n\n  uid = String(uid)\n    .replace(/\\s+/g,\"\")\n    .replace(/\"/g,\"\")\n    .toUpperCase();\n\n  return {\n    json: {\n      box: Number(r.json.box),\n      times,\n      uid\n    }\n  };\n\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        3360
+      ],
+      "id": "e59c22aa-8e78-4c78-bd52-e4144bba4dff",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rfid-scan",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        3696,
+        1600
+      ],
+      "id": "dd4677d9-df2b-44b1-9b10-b9d6615bb11f",
+      "name": "Webhook13",
+      "webhookId": "ab9bb1f9-0bbd-470e-aadf-9d71dd139736"
+    },
+    {
+      "parameters": {
+        "content": "Medicine Upload\n",
+        "height": 608,
+        "width": 4512
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1392,
+        -288
+      ],
+      "id": "1c653bbd-5599-4f03-8f5c-e5e87d30ba34",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "####Medicine Confirm\n",
+        "height": 592,
+        "width": 4036,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1232,
+        672
+      ],
+      "id": "ce393611-7189-4707-bffa-bd2624c27ffd",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "Inventory",
+        "height": 320,
+        "width": 1200
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        1552
+      ],
+      "id": "b42519d6-046e-4238-a472-92fe4de4b091",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "Inventory Change\n",
+        "height": 496,
+        "width": 1632
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1584,
+        2128
+      ],
+      "id": "b2a0cc9d-0224-4a58-8d17-416c0943c615",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "Reset Button\n",
+        "height": 272,
+        "width": 1600
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        2768
+      ],
+      "id": "442eaab9-c00d-43b9-beb1-4d8cb313f403",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "content": "Connect to esp32",
+        "height": 272,
+        "width": 1600
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        3264
+      ],
+      "id": "7ca06686-bcd0-452c-bf0e-8d66f46e26da",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet uid = \"\";\nif (raw.body && raw.body.uid)       uid = String(raw.body.uid);\nelse if (raw.uid)                   uid = String(raw.uid);\nelse if (raw.body && typeof raw.body === \"string\") {\n  try { uid = String(JSON.parse(raw.body).uid || \"\"); } catch(e) {}\n}\nreturn [{ json: { uid: uid.trim() } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        1600
+      ],
+      "id": "2d97edad-bd15-46cd-b01c-89ce35d01bfc",
+      "name": "Edit Fields5"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n \"status\": \"received\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4592,
+        1600
+      ],
+      "id": "a1cd103b-ca20-43f5-9328-994b5c317351",
+      "name": "Respond to Webhook15"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $(\"Get latest request_id row\").first().json.id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user": "={{ $(\"Edit Fields5\").first().json.uid }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "request_id",
+              "displayName": "request_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "medicine",
+              "displayName": "medicine",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "expires_at",
+              "displayName": "expires_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4368,
+        1600
+      ],
+      "id": "61ab2ecf-8056-4838-941f-71e18dcc3ed3",
+      "name": "Update row of medicine3"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rfid-clear",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        3696,
+        2048
+      ],
+      "id": "54170e13-afd2-48c8-b1d7-2923c1af391c",
+      "name": "Webhook rfid-clear",
+      "webhookId": "16edc315-40d0-4c17-a1db-851d7f2f37e1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"cleared\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4368,
+        2048
+      ],
+      "id": "43e69869-b57a-42ff-ab20-fe51ecc9d286",
+      "name": "Respond rfid-clear"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user",
+              "keyValue": "demo_user"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4144,
+        1600
+      ],
+      "id": "744666c7-b01e-440f-b68c-8b177a837d1b",
+      "name": "Get latest request_id row"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user",
+              "keyValue": "demo_user"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3920,
+        2048
+      ],
+      "id": "c3f05f6f-b717-4591-a200-e6138982b142",
+      "name": "Get latest row for clear"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user": "demo_user"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "user",
+              "displayName": "user",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        4144,
+        2048
+      ],
+      "id": "f408e395-e75c-4115-822f-0b0eb7d8e138",
+      "name": "Clear latest rfid_uid"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ur1nGPYKTlPV6WIm",
+          "mode": "list",
+          "cachedResultName": "request_id",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/ur1nGPYKTlPV6WIm"
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true,
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3920,
+        1824
+      ],
+      "id": "b12cb30c-df9f-4e26-b80d-8d05cbe5a5d9",
+      "name": "Get pending rfid row"
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = $input.all();\nif (!all || all.length === 0) return [{ json: { uid: \"\" } }];\nconst rows = all.map(i => i.json);\nrows.sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));\n// Row starts as demo_user, gets updated to RFID uid after tap\nconst tapped = rows.find(r =>\n  r.user &&\n  String(r.user).trim() !== \"\" &&\n  String(r.user).trim() !== \"demo_user\"\n);\nreturn [{ json: { uid: tapped ? String(tapped.user).trim() : \"\" } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4144,
+        1824
+      ],
+      "id": "082069f6-f502-42f5-a9f8-27f69bc78986",
+      "name": "Extract latest UID"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"uid\": \"{{ $json.uid }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4368,
+        1824
+      ],
+      "id": "e204bfcf-2732-4e01-acdf-5bd0f006fd13",
+      "name": "Respond rfid-pending"
+    },
+    {
+      "parameters": {
+        "path": "rfid-pending",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        3696,
+        1824
+      ],
+      "id": "db7061fd-804e-486f-9ee1-ef206398bc1b",
+      "name": "Webhook rfid-pending",
+      "webhookId": "fd50dabe-5f54-4e81-8cab-61d911b9586b"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YAfdCczzEPskuyEJ",
+          "mode": "list",
+          "cachedResultName": "medicine",
+          "cachedResultUrl": "/projects/St2u9mhCJCEl34Mi/datatables/YAfdCczzEPskuyEJ"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3104,
+        -64
+      ],
+      "id": "474d8260-7f1a-4a2c-a4c1-715106b34814",
+      "name": "get rows"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        3744,
+        48
+      ],
+      "id": "93bdffac-c545-4e42-8bc7-eb266f0179bf",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "qFD3eev2r5guvVNC",
+          "name": "OpenAi account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook7": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "get rows from quota1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "clean name2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clean name2": {
+      "main": [
+        [
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "insert row in medicine1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "quota full1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "compute free box": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "confirmation": {
+      "main": [
+        [
+          {
+            "node": "request_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If6": {
+      "main": [
+        [
+          {
+            "node": "Get row from medicine1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook8": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clean merge": {
+      "main": [
+        [
+          {
+            "node": "confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request_id": {
+      "main": [
+        [
+          {
+            "node": "insert row in request_id1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge4": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "clean merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "request id row1": {
+      "main": [
+        [
+          {
+            "node": "get quota",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update quota": {
+      "main": [
+        [
+          {
+            "node": "prepare response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get quota": {
+      "main": [
+        [
+          {
+            "node": "If6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "request id row1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook9": {
+      "main": [
+        [
+          {
+            "node": "Read Medicine Table1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get rows from quota1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "insert row in medicine1": {
+      "main": [
+        [
+          {
+            "node": "get rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "insert row in request_id1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row from medicine1": {
+      "main": [
+        [
+          {
+            "node": "Sort1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row of medicine2": {
+      "main": [
+        [
+          {
+            "node": "update quota",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Medicine Table1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook10": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields3": {
+      "main": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row(s)2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent3": {
+      "main": [
+        [
+          {
+            "node": "clean name3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clean name3": {
+      "main": [
+        [
+          {
+            "node": "Update row(s)2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sort1": {
+      "main": [
+        [
+          {
+            "node": "Limit2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit2": {
+      "main": [
+        [
+          {
+            "node": "Update row of medicine2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook11": {
+      "main": [
+        [
+          {
+            "node": "Delete row(s)2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete row(s)2": {
+      "main": [
+        [
+          {
+            "node": "Update row(s)3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row(s)3": {
+      "main": [
+        [
+          {
+            "node": "Delete row(s)3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook12": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields4": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook13": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields5": {
+      "main": [
+        [
+          {
+            "node": "Get latest request_id row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row of medicine3": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook rfid-clear": {
+      "main": [
+        [
+          {
+            "node": "Get latest row for clear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get latest request_id row": {
+      "main": [
+        [
+          {
+            "node": "Update row of medicine3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get latest row for clear": {
+      "main": [
+        [
+          {
+            "node": "Clear latest rfid_uid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear latest rfid_uid": {
+      "main": [
+        [
+          {
+            "node": "Respond rfid-clear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook rfid-pending": {
+      "main": [
+        [
+          {
+            "node": "Get pending rfid row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get pending rfid row": {
+      "main": [
+        [
+          {
+            "node": "Extract latest UID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract latest UID": {
+      "main": [
+        [
+          {
+            "node": "Respond rfid-pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get rows": {
+      "main": [
+        [
+          {
+            "node": "compute free box",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e619bf2d-2e0e-4446-b46c-5ccb1a35bfa0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aa3a384e8d4a6d041dc337be44255c41a2b5445ada53372e889a20fa18c990fc"
+  },
+  "id": "VGm2WV9GWY5HSkp4",
+  "tags": []
+}

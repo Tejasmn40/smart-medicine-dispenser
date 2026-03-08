@@ -10,23 +10,23 @@ A smart medicine dispenser system built with an ESP32, n8n automation, and a web
 
 | Dashboard | Medicine Identification |
 |---|---|
-| ![Dashboard](images/01_dashboard.png) | ![Identify](images/02_medicine_identify.png) |
+| ![Dashboard](images_01_dashboard.png) | ![Identify](images_02_medicine_identify.png) |
 
 | Time Selection | Box Selection |
 |---|---|
-| ![Times](images/03_time_selection.png) | ![Box](images/04_box_selection.png) |
+| ![Times](images_03_time_selection.png) | ![Box](images_04_box_selection.png) |
 
 | RFID Verified | ESP32 Serial Monitor |
 |---|---|
-| ![RFID](images/05_rfid_verified.png) | ![Serial](images/06_esp32_serial.png) |
+| ![RFID](images_05_rfid_verified.png) | ![Serial](images_06_esp32_serial.png) |
 
 | Medicine Table | User Table |
 |---|---|
-| ![Medicine](images/07_medicine_table.png) | ![User](images/08_user_table.png) |
+| ![Medicine](images_07_medicine_table.png) | ![User](images_08_user_table.png) |
 
 | Request Table | Hardware |
 |---|---|
-| ![Request](images/09_request_table.png) | ![Hardware](images/10_hardware.jpeg) |
+| ![Request](images_09_request_table.png) | ![Hardware](images_10_hardware.jpeg) |
 
 ---
 
